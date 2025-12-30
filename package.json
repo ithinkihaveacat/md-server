@@ -1,0 +1,29 @@
+{
+  "name": "md-server",
+  "version": "1.0.0",
+  "description": "A two-component system for displaying markdown content in a browser via SSE",
+  "type": "module",
+  "bin": {
+    "md-server": "./dist/server.js",
+    "md-server-push": "./dist/push.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test test/*.test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "markdown",
+    "server",
+    "sse",
+    "live-reload"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
