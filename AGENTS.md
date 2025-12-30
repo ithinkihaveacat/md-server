@@ -11,8 +11,8 @@ A TypeScript Node.js project with two CLI tools for displaying markdown in a bro
 ```
 md-server/
 ├── src/
-│   ├── server.ts      # HTTP server with SSE support
-│   └── push.ts        # CLI tool to push content to server
+│   ├── server.ts      # HTTP + MCP server with SSE support
+│   └── post.ts        # CLI tool to POST content to server
 ├── dist/              # Compiled JavaScript (generated)
 ├── test/
 │   └── server.test.js # Integration tests
@@ -23,8 +23,8 @@ md-server/
 
 ## Key Files
 
-- `src/server.ts` - Main server logic. Handles HTTP routes (`GET /`, `POST /`, `GET /events`) and SSE broadcasting. Contains embedded HTML with inline markdown parser.
-- `src/push.ts` - Reads stdin and POSTs to server. Simple HTTP client.
+- `src/server.ts` - Main server logic. Handles HTTP routes (`GET /`, `POST /`, `GET /events`), SSE broadcasting, and MCP server via stdio. Contains embedded HTML that loads marked.js from CDN.
+- `src/post.ts` - Reads stdin and POSTs to server. Simple HTTP client.
 - `test/server.test.js` - Integration tests using Node's built-in test runner. Spawns server processes and tests HTTP endpoints.
 
 ## Build & Test Commands
@@ -37,9 +37,10 @@ npm test             # Build and run tests
 
 ## Architecture Notes
 
-- **No external runtime dependencies** - Uses only Node.js built-in modules
-- **Markdown rendering** - Done client-side with an embedded inline parser (no CDN)
+- **Runtime dependencies** - Uses `@modelcontextprotocol/sdk` for MCP support and `zod` for schema validation
+- **Markdown rendering** - Done client-side using marked.js loaded from CDN. Supports HTML passthrough.
 - **SSE implementation** - Custom, follows SSE spec for multi-line data
+- **MCP integration** - Server runs both HTTP and MCP (stdio) transports simultaneously
 - **State** - Server stores only the most recent markdown content in memory
 
 ## Common Modifications
@@ -50,7 +51,7 @@ Edit `src/server.ts`, add route handling in the `http.createServer` callback bef
 
 ### Changing markdown rendering
 
-The markdown parser is embedded in the `HTML_PAGE` constant in `src/server.ts`. It uses regex-based parsing. For more features, consider replacing with a library like marked.
+The HTML page in `src/server.ts` loads marked.js from CDN. To customize rendering, modify the `marked.use()` configuration in the embedded `<script>` tag.
 
 ### Adding persistence
 
@@ -65,5 +66,6 @@ To add tests, edit `test/server.test.js`. Use the `request()` helper for HTTP ca
 ## Port Configuration
 
 Default port is 8080. Override via:
+
 - CLI flag: `--port 3000`
 - Environment variable: `PORT=3000`

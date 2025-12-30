@@ -207,9 +207,9 @@ const mcpServer = new McpServer({
 // Register the display_markdown tool
 mcpServer.tool(
   'display_markdown',
-  'Render markdown content in the user\'s browser via a live-updating webpage.',
+  'Render markdown (or HTML) content in the user\'s browser via a live-updating webpage.',
   {
-    markdown: z.string().describe('Markdown content to display')
+    markdown: z.string().describe('Markdown or HTML content to display')
   },
   async ({ markdown }) => {
     currentContent = markdown;
