@@ -127,11 +127,14 @@ const HTML_PAGE = `<!DOCTYPE html>
         .replace(/^---$/gm, '<hr>')
         .replace(/^\\*\\*\\*$/gm, '<hr>')
 
+        // Images (must come before links since ![...] contains [...])
+        .replace(/!\\[([^\\]]*?)\\]\\(([^)]+)\\)/g, '<img src="$2" alt="$1">')
+
         // Links
         .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2">$1</a>')
 
-        // Images
-        .replace(/!\\[([^\\]]*?)\\]\\(([^)]+)\\)/g, '<img src="$2" alt="$1">')
+        // Inline HTML <br> tags (restore escaped br tags)
+        .replace(/&lt;br\\s*\\/?&gt;/gi, '<br>')
 
         // Unordered lists
         .replace(/^[\\*\\-] (.+)$/gm, '<li>$1</li>')
