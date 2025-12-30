@@ -89,81 +89,9 @@ const HTML_PAGE = `<!DOCTYPE html>
   <div class="status disconnected" id="status">Disconnected</div>
   <div id="content"><p><em>Waiting for content...</em></p></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
-    // Simple markdown parser (handles common cases)
-    function parseMarkdown(md) {
-      let html = md
-        // Escape HTML
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-
-        // Code blocks (fenced)
-        .replace(/\`\`\`(\\w*)\\n([\\s\\S]*?)\`\`\`/g, '<pre><code>$2</code></pre>')
-
-        // Inline code
-        .replace(/\`([^\`]+)\`/g, '<code>$1</code>')
-
-        // Headers
-        .replace(/^###### (.+)$/gm, '<h6>$1</h6>')
-        .replace(/^##### (.+)$/gm, '<h5>$1</h5>')
-        .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-
-        // Bold and italic
-        .replace(/\\*\\*\\*(.+?)\\*\\*\\*/g, '<strong><em>$1</em></strong>')
-        .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
-        .replace(/\\*(.+?)\\*/g, '<em>$1</em>')
-        .replace(/___(.+?)___/g, '<strong><em>$1</em></strong>')
-        .replace(/__(.+?)__/g, '<strong>$1</strong>')
-        .replace(/_(.+?)_/g, '<em>$1</em>')
-
-        // Blockquotes
-        .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
-
-        // Horizontal rules
-        .replace(/^---$/gm, '<hr>')
-        .replace(/^\\*\\*\\*$/gm, '<hr>')
-
-        // Images (must come before links since ![...] contains [...])
-        .replace(/!\\[([^\\]]*?)\\]\\(([^)]+)\\)/g, '<img src="$2" alt="$1">')
-
-        // Links
-        .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2">$1</a>')
-
-        // Inline HTML <br> tags (restore escaped br tags)
-        .replace(/&lt;br\\s*\\/?&gt;/gi, '<br>')
-
-        // Unordered lists
-        .replace(/^[\\*\\-] (.+)$/gm, '<li>$1</li>')
-
-        // Ordered lists
-        .replace(/^\\d+\\. (.+)$/gm, '<li>$1</li>')
-
-        // Wrap consecutive <li> in <ul>
-        .replace(/(<li>.*<\\/li>\\n?)+/g, '<ul>$&</ul>')
-
-        // Paragraphs (double newlines)
-        .replace(/\\n\\n+/g, '</p><p>')
-
-        // Line breaks
-        .replace(/\\n/g, '<br>');
-
-      // Wrap in paragraph if not starting with block element
-      if (!html.match(/^<(h[1-6]|ul|ol|pre|blockquote|hr)/)) {
-        html = '<p>' + html + '</p>';
-      }
-
-      // Clean up empty paragraphs and fix nested issues
-      html = html
-        .replace(/<p><\\/p>/g, '')
-        .replace(/<p>(<h[1-6]|<ul|<ol|<pre|<blockquote|<hr)/g, '$1')
-        .replace(/(<\\/h[1-6]>|<\\/ul>|<\\/ol>|<\\/pre>|<\\/blockquote>|<hr>)<\\/p>/g, '$1');
-
-      return html;
-    }
+    marked.use({ breaks: true });
 
     const contentEl = document.getElementById('content');
     const statusEl = document.getElementById('status');
@@ -178,7 +106,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 
       es.addEventListener('update', (e) => {
         const markdown = e.data;
-        contentEl.innerHTML = parseMarkdown(markdown);
+        contentEl.innerHTML = marked.parse(markdown);
       });
 
       es.onerror = () => {
