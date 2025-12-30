@@ -2,6 +2,9 @@
 
 import http, { IncomingMessage, ServerResponse } from 'node:http';
 import { parseArgs } from 'node:util';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
 
 // Parse command line arguments
 const { values } = parseArgs({
@@ -195,7 +198,38 @@ const server = http.createServer((req: IncomingMessage, res: ServerResponse) => 
   res.end('Not Found');
 });
 
-// Start server
-server.listen(PORT, () => {
-  console.log(`Listening on http://localhost:${PORT}`);
+// Create MCP server
+const mcpServer = new McpServer({
+  name: 'md-server',
+  version: '1.0.0'
+});
+
+// Register the display_markdown tool
+mcpServer.tool(
+  'display_markdown',
+  'Render markdown content in the user\'s browser via a live-updating webpage.',
+  {
+    markdown: z.string().describe('Markdown content to display')
+  },
+  async ({ markdown }) => {
+    currentContent = markdown;
+
+    // Broadcast to all SSE clients
+    for (const client of clients) {
+      sendSSE(client, 'update', currentContent);
+    }
+
+    return {
+      content: [{ type: 'text', text: 'Markdown displayed successfully' }]
+    };
+  }
+);
+
+// Start HTTP server
+server.listen(PORT, async () => {
+  console.error(`Listening on http://localhost:${PORT}`);
+
+  // Connect MCP server to stdio transport
+  const transport = new StdioServerTransport();
+  await mcpServer.connect(transport);
 });

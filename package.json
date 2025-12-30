@@ -5,7 +5,7 @@
   "type": "module",
   "bin": {
     "md-server": "./dist/server.js",
-    "md-server-push": "./dist/push.js"
+    "md-server-post": "./dist/post.js"
   },
   "scripts": {
     "build": "tsc",
@@ -16,11 +16,16 @@
     "markdown",
     "server",
     "sse",
-    "live-reload"
+    "live-reload",
+    "mcp"
   ],
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

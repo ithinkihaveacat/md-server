@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serverPath = join(__dirname, '..', 'dist', 'server.js');
-const pushPath = join(__dirname, '..', 'dist', 'push.js');
+const postPath = join(__dirname, '..', 'dist', 'post.js');
 
 // Helper to make HTTP requests
 function request(options, body = null) {
@@ -202,7 +202,7 @@ describe('md-server', () => {
   });
 });
 
-describe('md-server-push', () => {
+describe('md-server-post', () => {
   let serverProcess;
   const testPort = 9877;
 
@@ -219,19 +219,19 @@ describe('md-server-push', () => {
     }
   });
 
-  test('pushes stdin content to server', async () => {
-    const markdown = '# Push Test\n\nContent from push.';
+  test('posts stdin content to server', async () => {
+    const markdown = '# Post Test\n\nContent from post.';
 
-    // Run md-server-push with stdin
-    const pushProcess = spawn('node', [pushPath, '--url', `http://localhost:${testPort}`], {
+    // Run md-server-post with stdin
+    const postProcess = spawn('node', [postPath, '--url', `http://localhost:${testPort}`], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    pushProcess.stdin.write(markdown);
-    pushProcess.stdin.end();
+    postProcess.stdin.write(markdown);
+    postProcess.stdin.end();
 
     const exitCode = await new Promise(resolve => {
-      pushProcess.on('close', resolve);
+      postProcess.on('close', resolve);
     });
 
     assert.strictEqual(exitCode, 0);
@@ -248,7 +248,7 @@ describe('md-server-push', () => {
         res.on('data', chunk => {
           data += chunk;
           // Wait until we have the full content (ends with double newline for SSE)
-          if (data.includes('Content from push')) {
+          if (data.includes('Content from post')) {
             req.destroy();
             resolve(data);
           }
@@ -264,23 +264,23 @@ describe('md-server-push', () => {
       }, 2000);
     });
 
-    assert.match(sseData, /# Push Test/);
-    assert.match(sseData, /Content from push/);
+    assert.match(sseData, /# Post Test/);
+    assert.match(sseData, /Content from post/);
   });
 
   test('exits with error for invalid server URL', async () => {
-    const pushProcess = spawn('node', [pushPath, '--url', 'http://localhost:59999'], {
+    const postProcess = spawn('node', [postPath, '--url', 'http://localhost:59999'], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    pushProcess.stdin.write('test');
-    pushProcess.stdin.end();
+    postProcess.stdin.write('test');
+    postProcess.stdin.end();
 
     let stderr = '';
-    pushProcess.stderr.on('data', chunk => { stderr += chunk; });
+    postProcess.stderr.on('data', chunk => { stderr += chunk; });
 
     const exitCode = await new Promise(resolve => {
-      pushProcess.on('close', resolve);
+      postProcess.on('close', resolve);
     });
 
     assert.notStrictEqual(exitCode, 0);
