@@ -10,6 +10,8 @@
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test test/*.test.js",
+    "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters",
+    "format": "prettier --write \"**/*.{ts,md}\"",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

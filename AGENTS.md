@@ -33,7 +33,16 @@ md-server/
 npm install          # Install dependencies
 npm run build        # Compile TypeScript to dist/
 npm test             # Build and run tests
+npm run typecheck    # Type-check without emitting (stricter)
+npm run format       # Format TypeScript and Markdown files
 ```
+
+## Code Quality Requirements
+
+When adding or updating files, run:
+
+1. `npm run typecheck` - Must pass with no errors
+2. `npm run format` - Format all changed files
 
 ## Architecture Notes
 
