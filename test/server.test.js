@@ -202,6 +202,75 @@ describe('md-server', () => {
   });
 });
 
+describe('md-server graceful shutdown', () => {
+  const testPort = 9878;
+
+  test('exits when stdin closes', async () => {
+    const serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    await waitForServer(testPort);
+
+    // Close stdin to simulate agent disconnecting
+    serverProcess.stdin.end();
+
+    // Server should exit within 2 seconds
+    const exitCode = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        serverProcess.kill();
+        reject(new Error('Server did not exit after stdin closed'));
+      }, 2000);
+
+      serverProcess.on('close', (code) => {
+        clearTimeout(timeout);
+        resolve(code);
+      });
+    });
+
+    assert.strictEqual(exitCode, 0);
+  });
+
+  test('exits when stdin closes even with active SSE clients', async () => {
+    const serverProcess = spawn('node', [serverPath, '--port', (testPort + 1).toString()], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    await waitForServer(testPort + 1);
+
+    // Connect an SSE client
+    const sseReq = http.request({
+      hostname: 'localhost',
+      port: testPort + 1,
+      path: '/events',
+      method: 'GET'
+    }, () => {});
+    sseReq.on('error', () => {}); // Ignore connection reset
+    sseReq.end();
+
+    // Give SSE connection time to establish
+    await new Promise(r => setTimeout(r, 100));
+
+    // Close stdin to simulate agent disconnecting
+    serverProcess.stdin.end();
+
+    // Server should still exit within 2 seconds despite active SSE connection
+    const exitCode = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        serverProcess.kill();
+        reject(new Error('Server did not exit after stdin closed (with SSE client)'));
+      }, 2000);
+
+      serverProcess.on('close', (code) => {
+        clearTimeout(timeout);
+        resolve(code);
+      });
+    });
+
+    assert.strictEqual(exitCode, 0);
+  });
+});
+
 describe('md-server-post', () => {
   let serverProcess;
   const testPort = 9877;

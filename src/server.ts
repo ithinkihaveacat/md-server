@@ -225,11 +225,35 @@ mcpServer.tool(
   }
 );
 
+// Graceful shutdown when MCP connection closes
+let shuttingDown = false;
+function shutdown(): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.error('Shutting down...');
+
+  // Close all SSE client connections (otherwise server.close() waits forever)
+  for (const client of clients) {
+    client.end();
+  }
+  clients.clear();
+
+  server.close(() => {
+    process.exit(0);
+  });
+}
+
 // Start HTTP server
 server.listen(PORT, async () => {
   console.error(`Listening on http://localhost:${PORT}`);
 
   // Connect MCP server to stdio transport
   const transport = new StdioServerTransport();
+
+  // StdioServerTransport doesn't detect stdin close, so listen directly
+  process.stdin.on('end', shutdown);
+  process.stdin.on('close', shutdown);
+
   await mcpServer.connect(transport);
 });
