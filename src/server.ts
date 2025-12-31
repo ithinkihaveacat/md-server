@@ -6,6 +6,34 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
+// Product schema for display_product tool
+// Only title, price, and currency are required; all other fields are optional
+const ProductSchema = z.object({
+  // Required fields
+  title: z.string().describe('Product name'),
+  price: z.number().describe('Current price'),
+  currency: z.string().describe('Currency code (GBP, USD, EUR, etc.)'),
+  // Optional base fields
+  store: z.string().optional().describe('Store identifier'),
+  brand: z.string().optional().describe('Manufacturer/vendor'),
+  product_url: z.string().optional().describe('Link to product page'),
+  image_url: z.string().optional().describe('Product image URL'),
+  variant: z.string().optional().describe('Variant description'),
+  size: z.string().optional().describe('Size value'),
+  color: z.string().optional().describe('Color value'),
+  compare_at_price: z.number().optional().describe('Original price if on sale'),
+  discount_percent: z.number().optional().describe('Discount percentage'),
+  savings: z.number().optional().describe('Savings amount'),
+  available: z.boolean().optional().describe('Whether in stock'),
+  // Optional event fields
+  first_seen_at: z.string().optional().describe('When product was added'),
+  became_available_at: z.string().optional().describe('When item restocked'),
+  previous_price: z.number().optional().describe('Price before drop'),
+  event_timestamp: z.string().optional().describe('When event occurred'),
+});
+
+type Product = z.infer<typeof ProductSchema>;
+
 // Parse command line arguments
 const { values } = parseArgs({
   options: {
@@ -137,6 +165,99 @@ function sendSSE(res: ServerResponse, event: string, data: string): void {
   res.write('\n');
 }
 
+// Format price with currency symbol
+function formatPrice(price: number, currency: string): string {
+  const symbols: Record<string, string> = {
+    GBP: '£', USD: '$', EUR: '€', JPY: '¥', CAD: 'C$', AUD: 'A$'
+  };
+  const symbol = symbols[currency] || currency + ' ';
+  return `${symbol}${price.toFixed(2)}`;
+}
+
+// Render product as HTML card
+function renderProductHTML(product: Product): string {
+  const parts: string[] = [];
+
+  parts.push(`<div style="max-width: 500px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">`);
+
+  // Image
+  if (product.image_url) {
+    parts.push(`<img src="${product.image_url}" alt="${product.title}" style="width: 100%; height: auto; display: block;">`);
+  }
+
+  parts.push(`<div style="padding: 16px;">`);
+
+  // Title (linked if product_url available)
+  if (product.product_url) {
+    parts.push(`<h2 style="margin: 0 0 8px 0; font-size: 1.25rem;"><a href="${product.product_url}" target="_blank" style="color: #333; text-decoration: none;">${product.title}</a></h2>`);
+  } else {
+    parts.push(`<h2 style="margin: 0 0 8px 0; font-size: 1.25rem;">${product.title}</h2>`);
+  }
+
+  // Brand and store
+  const brandStore = [product.brand, product.store].filter(Boolean).join(' · ');
+  if (brandStore) {
+    parts.push(`<p style="margin: 0 0 8px 0; color: #666; font-size: 0.9rem;">${brandStore}</p>`);
+  }
+
+  // Variant, size, color
+  const details = [product.variant, product.size, product.color].filter(Boolean).join(' / ');
+  if (details) {
+    parts.push(`<p style="margin: 0 0 12px 0; color: #666;">${details}</p>`);
+  }
+
+  // Price section
+  parts.push(`<div style="margin-bottom: 12px;">`);
+  parts.push(`<span style="font-size: 1.5rem; font-weight: bold; color: #333;">${formatPrice(product.price, product.currency)}</span>`);
+
+  if (product.compare_at_price) {
+    parts.push(` <span style="text-decoration: line-through; color: #999;">${formatPrice(product.compare_at_price, product.currency)}</span>`);
+  }
+
+  if (product.discount_percent) {
+    parts.push(` <span style="background: #e53935; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">${product.discount_percent.toFixed(0)}% off</span>`);
+  }
+
+  if (product.savings) {
+    parts.push(`<div style="color: #4caf50; font-size: 0.9rem; margin-top: 4px;">Save ${formatPrice(product.savings, product.currency)}</div>`);
+  }
+
+  if (product.previous_price) {
+    parts.push(`<div style="color: #666; font-size: 0.9rem; margin-top: 4px;">Was ${formatPrice(product.previous_price, product.currency)}</div>`);
+  }
+
+  parts.push(`</div>`);
+
+  // Availability
+  if (product.available !== undefined) {
+    if (product.available) {
+      parts.push(`<span style="background: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">In Stock</span>`);
+    } else {
+      parts.push(`<span style="background: #9e9e9e; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">Out of Stock</span>`);
+    }
+  }
+
+  // Event info
+  const eventInfo: string[] = [];
+  if (product.first_seen_at) {
+    eventInfo.push(`Added: ${product.first_seen_at}`);
+  }
+  if (product.became_available_at) {
+    eventInfo.push(`Restocked: ${product.became_available_at}`);
+  }
+  if (product.event_timestamp) {
+    eventInfo.push(`Event: ${product.event_timestamp}`);
+  }
+  if (eventInfo.length > 0) {
+    parts.push(`<p style="margin: 12px 0 0 0; color: #666; font-size: 0.8rem;">${eventInfo.join(' · ')}</p>`);
+  }
+
+  parts.push(`</div>`); // Close padding div
+  parts.push(`</div>`); // Close card div
+
+  return parts.join('\n');
+}
+
 // Create HTTP server
 const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
   const method = req.method;
@@ -221,6 +342,25 @@ mcpServer.tool(
 
     return {
       content: [{ type: 'text', text: 'Markdown displayed successfully' }]
+    };
+  }
+);
+
+// Register the display_product tool
+mcpServer.tool(
+  'display_product',
+  'Display a product card in the browser with image, price, and details.',
+  { product: ProductSchema },
+  async ({ product }) => {
+    currentContent = renderProductHTML(product);
+
+    // Broadcast to all SSE clients
+    for (const client of clients) {
+      sendSSE(client, 'update', currentContent);
+    }
+
+    return {
+      content: [{ type: 'text', text: `Displayed: ${product.title}` }]
     };
   }
 );

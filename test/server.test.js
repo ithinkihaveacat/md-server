@@ -271,6 +271,202 @@ describe('md-server graceful shutdown', () => {
   });
 });
 
+describe('display_product MCP tool', () => {
+  const testPort = 9880;
+
+  // Helper to send MCP JSON-RPC message
+  function sendMcpMessage(proc, message) {
+    const json = JSON.stringify(message);
+    proc.stdin.write(json + '\n');
+  }
+
+  test('displays product card via MCP tool', async () => {
+    const serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    await waitForServer(testPort);
+
+    // Connect to SSE to receive the product card
+    const productReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          // Wait for complete SSE message (ends with double newline after all data lines)
+          // Also check for In Stock to ensure we have the full card
+          if (data.includes('Test Product') && data.includes('In Stock') && data.includes('\n\n')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for product card'));
+      }, 5000);
+    });
+
+    // Wait for SSE connection to establish
+    await new Promise(r => setTimeout(r, 100));
+
+    // Send MCP initialize request
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'test', version: '1.0.0' }
+      }
+    });
+
+    // Wait for initialize response
+    await new Promise(r => setTimeout(r, 100));
+
+    // Send initialized notification
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized'
+    });
+
+    // Wait a bit
+    await new Promise(r => setTimeout(r, 100));
+
+    // Call display_product tool
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_product',
+        arguments: {
+          product: {
+            title: 'Test Product',
+            price: 49.99,
+            currency: 'GBP',
+            brand: 'Test Brand',
+            available: true,
+            discount_percent: 20,
+            compare_at_price: 62.49
+          }
+        }
+      }
+    });
+
+    // Wait for product card to be received via SSE
+    const sseData = await productReceived;
+
+    // Verify product card content
+    try {
+      assert.match(sseData, /Test Product/);
+      assert.match(sseData, /£49\.99/);
+      assert.match(sseData, /Test Brand/);
+      assert.match(sseData, /20% off/);
+      assert.match(sseData, /In Stock/);
+    } finally {
+      serverProcess.kill();
+    }
+  });
+
+  test('displays minimal product with only required fields', async () => {
+    const serverProcess = spawn('node', [serverPath, '--port', (testPort + 1).toString()], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    await waitForServer(testPort + 1);
+
+    // Connect to SSE
+    const productReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort + 1,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          if (data.includes('Minimal Product') && data.includes('$25.00')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for minimal product'));
+      }, 5000);
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    // Initialize MCP
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'test', version: '1.0.0' }
+      }
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized'
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    // Call with minimal required fields only
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_product',
+        arguments: {
+          product: {
+            title: 'Minimal Product',
+            price: 25.00,
+            currency: 'USD'
+          }
+        }
+      }
+    });
+
+    const sseData = await productReceived;
+
+    try {
+      assert.match(sseData, /Minimal Product/);
+      assert.match(sseData, /\$25\.00/);
+      // Should NOT contain optional fields
+      assert.doesNotMatch(sseData, /In Stock/);
+      assert.doesNotMatch(sseData, /Out of Stock/);
+    } finally {
+      serverProcess.kill();
+    }
+  });
+});
+
 describe('md-server-post', () => {
   let serverProcess;
   const testPort = 9877;
