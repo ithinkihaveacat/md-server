@@ -121,11 +121,22 @@ const HTML_PAGE = `<!DOCTYPE html>
   <div id="content"><p><em>Waiting for content...</em></p></div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <script>
     marked.use({ breaks: true });
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
 
     const contentEl = document.getElementById('content');
     const statusEl = document.getElementById('status');
+
+    async function renderContent(markdown) {
+      contentEl.innerHTML = marked.parse(markdown);
+      // Re-render any mermaid diagrams
+      const mermaidEls = contentEl.querySelectorAll('.mermaid');
+      if (mermaidEls.length > 0) {
+        await mermaid.run({ nodes: mermaidEls });
+      }
+    }
 
     function connect() {
       const es = new EventSource('/events');
@@ -137,7 +148,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 
       es.addEventListener('update', (e) => {
         const markdown = e.data;
-        contentEl.innerHTML = marked.parse(markdown);
+        renderContent(markdown);
       });
 
       es.onerror = () => {
@@ -379,6 +390,104 @@ mcpServer.tool(
 
     return {
       content: [{ type: "text", text: "Markdown displayed successfully" }],
+    };
+  },
+);
+
+// Register the display_image tool
+mcpServer.tool(
+  "display_image",
+  "Display an image in the browser. Accepts either a URL or base64-encoded image data.",
+  {
+    url: z.string().optional().describe("URL to the image"),
+    base64: z.string().optional().describe("Base64-encoded image data"),
+    media_type: z
+      .string()
+      .optional()
+      .describe("MIME type for base64 data (e.g., image/png, image/jpeg)"),
+    alt: z.string().optional().describe("Alt text for the image"),
+    caption: z.string().optional().describe("Caption to display below image"),
+  },
+  async ({ url, base64, media_type, alt, caption }) => {
+    if (!url && !base64) {
+      return {
+        content: [
+          { type: "text", text: "Error: Either url or base64 is required" },
+        ],
+        isError: true,
+      };
+    }
+
+    const altText = alt || "Image";
+    let src: string;
+
+    if (base64) {
+      const mime = media_type || "image/png";
+      src = `data:${mime};base64,${base64}`;
+    } else {
+      src = url!;
+    }
+
+    const parts: string[] = [
+      `<div style="text-align: center;">`,
+      `<img src="${src}" alt="${altText}" style="max-width: 100%; height: auto; border-radius: 4px;">`,
+    ];
+
+    if (caption) {
+      parts.push(
+        `<p style="margin-top: 8px; color: #666; font-style: italic;">${caption}</p>`,
+      );
+    }
+
+    parts.push(`</div>`);
+
+    currentContent = parts.join("\n");
+
+    for (const client of clients) {
+      sendSSE(client, "update", currentContent);
+    }
+
+    return {
+      content: [{ type: "text", text: "Image displayed successfully" }],
+    };
+  },
+);
+
+// Register the display_mermaid tool
+mcpServer.tool(
+  "display_mermaid",
+  "Render a Mermaid diagram in the browser. Supports flowcharts, sequence diagrams, class diagrams, and more.",
+  {
+    diagram: z.string().describe("Mermaid diagram syntax"),
+    title: z.string().optional().describe("Optional title above the diagram"),
+  },
+  async ({ diagram, title }) => {
+    const parts: string[] = [];
+
+    if (title) {
+      parts.push(
+        `<h2 style="text-align: center; margin-bottom: 16px;">${title}</h2>`,
+      );
+    }
+
+    // Use a unique ID for each render to avoid conflicts
+    const diagramId = `mermaid-${Date.now()}`;
+    parts.push(`<div style="display: flex; justify-content: center;">`);
+    parts.push(`<pre class="mermaid" id="${diagramId}">`);
+    parts.push(diagram);
+    parts.push(`</pre>`);
+    parts.push(`</div>`);
+
+    currentContent = parts.join("\n");
+
+    for (const client of clients) {
+      sendSSE(client, "update", currentContent);
+    }
+
+    return {
+      content: [
+        { type: "text", text: "Mermaid diagram displayed successfully" },
+      ],
     };
   },
 );
