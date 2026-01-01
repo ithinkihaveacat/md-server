@@ -492,21 +492,84 @@ mcpServer.tool(
   },
 );
 
+// Sort options for product display
+const SortOption = z
+  .enum(["price_asc", "price_desc", "discount"])
+  .optional()
+  .describe("Sort order: price_asc, price_desc, or discount (highest first)");
+
 // Register the display_product tool
 mcpServer.tool(
   "display_product",
-  "Display a product card in the browser with image, price, and details.",
-  { product: ProductSchema },
-  async ({ product }) => {
-    currentContent = renderProductHTML(product);
+  "Display one or more product cards in the browser with image, price, and details.",
+  {
+    products: z.array(ProductSchema).describe("List of products to display"),
+    sort: SortOption,
+    page: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe("Page number (1-indexed, default 1)"),
+    page_size: z
+      .number()
+      .int()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe("Items per page (default 50, max 200)"),
+  },
+  async ({ products, sort, page = 1, page_size = 50 }) => {
+    let sorted = [...products];
+
+    // Apply sorting
+    if (sort === "price_asc") {
+      sorted.sort((a, b) => a.price - b.price);
+    } else if (sort === "price_desc") {
+      sorted.sort((a, b) => b.price - a.price);
+    } else if (sort === "discount") {
+      sorted.sort(
+        (a, b) => (b.discount_percent ?? 0) - (a.discount_percent ?? 0),
+      );
+    }
+
+    // Apply pagination
+    const totalItems = sorted.length;
+    const totalPages = Math.ceil(totalItems / page_size);
+    const startIndex = (page - 1) * page_size;
+    const endIndex = startIndex + page_size;
+    const paged = sorted.slice(startIndex, endIndex);
+
+    // Render products
+    const productCards = paged.map(renderProductHTML).join("\n");
+
+    // Add pagination info if there are multiple pages
+    const parts: string[] = [];
+    if (totalPages > 1) {
+      parts.push(
+        `<div style="margin-bottom: 16px; padding: 12px; background: #f5f5f5; border-radius: 4px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">`,
+        `<span>Showing ${startIndex + 1}–${Math.min(endIndex, totalItems)} of ${totalItems} products</span>`,
+        `<span style="margin-left: 16px;">Page ${page} of ${totalPages}</span>`,
+        `</div>`,
+      );
+    }
+    parts.push(productCards);
+
+    currentContent = parts.join("\n");
 
     // Broadcast to all SSE clients
     for (const client of clients) {
       sendSSE(client, "update", currentContent);
     }
 
+    const displayedCount = paged.length;
+    const summary =
+      displayedCount === 1
+        ? `Displayed: ${paged[0].title}`
+        : `Displayed ${displayedCount} products (page ${page}/${totalPages})`;
+
     return {
-      content: [{ type: "text", text: `Displayed: ${product.title}` }],
+      content: [{ type: "text", text: summary }],
     };
   },
 );
@@ -532,7 +595,9 @@ function shutdown(): void {
 
 // Start HTTP server
 server.listen(PORT, async () => {
-  console.error(`Listening on http://localhost:${PORT}`);
+  const addr = server.address();
+  const actualPort = typeof addr === "object" && addr ? addr.port : PORT;
+  console.error(`Listening on http://localhost:${actualPort}`);
 
   // Connect MCP server to stdio transport
   const transport = new StdioServerTransport();

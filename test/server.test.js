@@ -25,28 +25,52 @@ function request(options, body = null) {
   });
 }
 
-// Helper to wait for server to be ready
-async function waitForServer(port, maxAttempts = 20) {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      await request({ hostname: 'localhost', port, path: '/', method: 'GET' });
-      return;
-    } catch {
-      await new Promise(r => setTimeout(r, 100));
-    }
-  }
-  throw new Error('Server did not start');
+// Helper to start server on a random available port
+// Returns { process, port } once server is ready
+function startServer() {
+  return new Promise((resolve, reject) => {
+    const serverProcess = spawn('node', [serverPath, '--port', '0'], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      serverProcess.kill();
+      reject(new Error(`Server did not start. stderr: ${stderr}`));
+    }, 5000);
+
+    serverProcess.stderr.on('data', (chunk) => {
+      stderr += chunk;
+      // Parse port from "Listening on http://localhost:PORT"
+      const match = stderr.match(/Listening on http:\/\/localhost:(\d+)/);
+      if (match) {
+        clearTimeout(timeout);
+        resolve({ process: serverProcess, port: parseInt(match[1], 10) });
+      }
+    });
+
+    serverProcess.on('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+
+    serverProcess.on('close', (code) => {
+      clearTimeout(timeout);
+      if (code !== 0) {
+        reject(new Error(`Server exited with code ${code}. stderr: ${stderr}`));
+      }
+    });
+  });
 }
 
 describe('md-server', () => {
   let serverProcess;
-  const testPort = 9876;
+  let testPort;
 
   before(async () => {
-    serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-    await waitForServer(testPort);
+    const server = await startServer();
+    serverProcess = server.process;
+    testPort = server.port;
   });
 
   after(() => {
@@ -203,14 +227,8 @@ describe('md-server', () => {
 });
 
 describe('md-server graceful shutdown', () => {
-  const testPort = 9878;
-
   test('exits when stdin closes', async () => {
-    const serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    await waitForServer(testPort);
+    const { process: serverProcess, port: testPort } = await startServer();
 
     // Close stdin to simulate agent disconnecting
     serverProcess.stdin.end();
@@ -232,16 +250,12 @@ describe('md-server graceful shutdown', () => {
   });
 
   test('exits when stdin closes even with active SSE clients', async () => {
-    const serverProcess = spawn('node', [serverPath, '--port', (testPort + 1).toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    await waitForServer(testPort + 1);
+    const { process: serverProcess, port: testPort } = await startServer();
 
     // Connect an SSE client
     const sseReq = http.request({
       hostname: 'localhost',
-      port: testPort + 1,
+      port: testPort,
       path: '/events',
       method: 'GET'
     }, () => {});
@@ -272,8 +286,6 @@ describe('md-server graceful shutdown', () => {
 });
 
 describe('display_product MCP tool', () => {
-  const testPort = 9880;
-
   // Helper to send MCP JSON-RPC message
   function sendMcpMessage(proc, message) {
     const json = JSON.stringify(message);
@@ -281,11 +293,7 @@ describe('display_product MCP tool', () => {
   }
 
   test('displays product card via MCP tool', async () => {
-    const serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    await waitForServer(testPort);
+    const { process: serverProcess, port: testPort } = await startServer();
 
     // Connect to SSE to receive the product card
     const productReceived = new Promise((resolve, reject) => {
@@ -351,7 +359,7 @@ describe('display_product MCP tool', () => {
       params: {
         name: 'display_product',
         arguments: {
-          product: {
+          products: [{
             title: 'Test Product',
             price: 49.99,
             currency: 'GBP',
@@ -359,7 +367,7 @@ describe('display_product MCP tool', () => {
             available: true,
             discount_percent: 20,
             compare_at_price: 62.49
-          }
+          }]
         }
       }
     });
@@ -380,17 +388,13 @@ describe('display_product MCP tool', () => {
   });
 
   test('displays minimal product with only required fields', async () => {
-    const serverProcess = spawn('node', [serverPath, '--port', (testPort + 1).toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    await waitForServer(testPort + 1);
+    const { process: serverProcess, port: testPort } = await startServer();
 
     // Connect to SSE
     const productReceived = new Promise((resolve, reject) => {
       const req = http.request({
         hostname: 'localhost',
-        port: testPort + 1,
+        port: testPort,
         path: '/events',
         method: 'GET'
       }, (res) => {
@@ -444,11 +448,11 @@ describe('display_product MCP tool', () => {
       params: {
         name: 'display_product',
         arguments: {
-          product: {
+          products: [{
             title: 'Minimal Product',
             price: 25.00,
             currency: 'USD'
-          }
+          }]
         }
       }
     });
@@ -468,8 +472,6 @@ describe('display_product MCP tool', () => {
 });
 
 describe('display_image MCP tool', () => {
-  const testPort = 9882;
-
   function sendMcpMessage(proc, message) {
     const json = JSON.stringify(message);
     proc.stdin.write(json + '\n');
@@ -495,11 +497,7 @@ describe('display_image MCP tool', () => {
   }
 
   test('displays image from URL', async () => {
-    const serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    await waitForServer(testPort);
+    const { process: serverProcess, port: testPort } = await startServer();
 
     const imageReceived = new Promise((resolve, reject) => {
       const req = http.request({
@@ -557,16 +555,12 @@ describe('display_image MCP tool', () => {
   });
 
   test('displays base64 image', async () => {
-    const serverProcess = spawn('node', [serverPath, '--port', (testPort + 1).toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    await waitForServer(testPort + 1);
+    const { process: serverProcess, port: testPort } = await startServer();
 
     const imageReceived = new Promise((resolve, reject) => {
       const req = http.request({
         hostname: 'localhost',
-        port: testPort + 1,
+        port: testPort,
         path: '/events',
         method: 'GET'
       }, (res) => {
@@ -616,8 +610,6 @@ describe('display_image MCP tool', () => {
 });
 
 describe('display_mermaid MCP tool', () => {
-  const testPort = 9884;
-
   function sendMcpMessage(proc, message) {
     const json = JSON.stringify(message);
     proc.stdin.write(json + '\n');
@@ -643,11 +635,7 @@ describe('display_mermaid MCP tool', () => {
   }
 
   test('displays mermaid flowchart', async () => {
-    const serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    await waitForServer(testPort);
+    const { process: serverProcess, port: testPort } = await startServer();
 
     const diagramReceived = new Promise((resolve, reject) => {
       const req = http.request({
@@ -703,16 +691,12 @@ describe('display_mermaid MCP tool', () => {
   });
 
   test('displays mermaid diagram without title', async () => {
-    const serverProcess = spawn('node', [serverPath, '--port', (testPort + 1).toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    await waitForServer(testPort + 1);
+    const { process: serverProcess, port: testPort } = await startServer();
 
     const diagramReceived = new Promise((resolve, reject) => {
       const req = http.request({
         hostname: 'localhost',
-        port: testPort + 1,
+        port: testPort,
         path: '/events',
         method: 'GET'
       }, (res) => {
@@ -765,13 +749,12 @@ describe('display_mermaid MCP tool', () => {
 
 describe('md-server-post', () => {
   let serverProcess;
-  const testPort = 9877;
+  let testPort;
 
   before(async () => {
-    serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-    await waitForServer(testPort);
+    const server = await startServer();
+    serverProcess = server.process;
+    testPort = server.port;
   });
 
   after(() => {
