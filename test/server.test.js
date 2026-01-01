@@ -467,6 +467,302 @@ describe('display_product MCP tool', () => {
   });
 });
 
+describe('display_image MCP tool', () => {
+  const testPort = 9882;
+
+  function sendMcpMessage(proc, message) {
+    const json = JSON.stringify(message);
+    proc.stdin.write(json + '\n');
+  }
+
+  async function initMcp(serverProcess) {
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'test', version: '1.0.0' }
+      }
+    });
+    await new Promise(r => setTimeout(r, 100));
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized'
+    });
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  test('displays image from URL', async () => {
+    const serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    await waitForServer(testPort);
+
+    const imageReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          // Wait for complete SSE message (contains closing div and double newline)
+          if (data.includes('example.com/test.png') && data.includes('</div>') && data.includes('\n\n')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for image'));
+      }, 5000);
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+    await initMcp(serverProcess);
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_image',
+        arguments: {
+          url: 'https://example.com/test.png',
+          alt: 'Test Image',
+          caption: 'A test caption'
+        }
+      }
+    });
+
+    const sseData = await imageReceived;
+
+    try {
+      assert.match(sseData, /example\.com\/test\.png/);
+      assert.match(sseData, /alt="Test Image"/);
+      assert.match(sseData, /A test caption/);
+    } finally {
+      serverProcess.kill();
+    }
+  });
+
+  test('displays base64 image', async () => {
+    const serverProcess = spawn('node', [serverPath, '--port', (testPort + 1).toString()], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    await waitForServer(testPort + 1);
+
+    const imageReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort + 1,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          if (data.includes('data:image/png;base64,')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for base64 image'));
+      }, 5000);
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+    await initMcp(serverProcess);
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_image',
+        arguments: {
+          base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          media_type: 'image/png'
+        }
+      }
+    });
+
+    const sseData = await imageReceived;
+
+    try {
+      assert.match(sseData, /data:image\/png;base64,/);
+    } finally {
+      serverProcess.kill();
+    }
+  });
+});
+
+describe('display_mermaid MCP tool', () => {
+  const testPort = 9884;
+
+  function sendMcpMessage(proc, message) {
+    const json = JSON.stringify(message);
+    proc.stdin.write(json + '\n');
+  }
+
+  async function initMcp(serverProcess) {
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'test', version: '1.0.0' }
+      }
+    });
+    await new Promise(r => setTimeout(r, 100));
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized'
+    });
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  test('displays mermaid flowchart', async () => {
+    const serverProcess = spawn('node', [serverPath, '--port', testPort.toString()], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    await waitForServer(testPort);
+
+    const diagramReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          if (data.includes('class="mermaid"') && data.includes('graph TD')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for mermaid diagram'));
+      }, 5000);
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+    await initMcp(serverProcess);
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_mermaid',
+        arguments: {
+          diagram: 'graph TD\n    A[Start] --> B[End]',
+          title: 'Test Flowchart'
+        }
+      }
+    });
+
+    const sseData = await diagramReceived;
+
+    try {
+      assert.match(sseData, /class="mermaid"/);
+      assert.match(sseData, /graph TD/);
+      assert.match(sseData, /Test Flowchart/);
+    } finally {
+      serverProcess.kill();
+    }
+  });
+
+  test('displays mermaid diagram without title', async () => {
+    const serverProcess = spawn('node', [serverPath, '--port', (testPort + 1).toString()], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    await waitForServer(testPort + 1);
+
+    const diagramReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort + 1,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          // Wait for complete SSE message (contains closing tags and double newline)
+          if (data.includes('sequenceDiagram') && data.includes('</pre>') && data.includes('\n\n')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for sequence diagram'));
+      }, 5000);
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+    await initMcp(serverProcess);
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_mermaid',
+        arguments: {
+          diagram: 'sequenceDiagram\n    Alice->>Bob: Hello'
+        }
+      }
+    });
+
+    const sseData = await diagramReceived;
+
+    try {
+      assert.match(sseData, /sequenceDiagram/);
+      assert.match(sseData, /Alice/);
+      assert.doesNotMatch(sseData, /<h2/); // No title header
+    } finally {
+      serverProcess.kill();
+    }
+  });
+});
+
 describe('md-server-post', () => {
   let serverProcess;
   const testPort = 9877;
