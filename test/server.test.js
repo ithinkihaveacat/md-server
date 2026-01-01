@@ -747,6 +747,176 @@ describe('display_mermaid MCP tool', () => {
   });
 });
 
+describe('display_chart MCP tool', () => {
+  function sendMcpMessage(proc, message) {
+    const json = JSON.stringify(message);
+    proc.stdin.write(json + '\n');
+  }
+
+  async function initMcp(serverProcess) {
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'test', version: '1.0.0' }
+      }
+    });
+    await new Promise(r => setTimeout(r, 100));
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized'
+    });
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  test('displays chart with annotations', async () => {
+    const { process: serverProcess, port: testPort } = await startServer();
+
+    const chartReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          if (data.includes('data-chart=') && data.includes('<canvas>')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for chart'));
+      }, 5000);
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+    await initMcp(serverProcess);
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_chart',
+        arguments: {
+          type: 'line',
+          title: 'Price History',
+          data: {
+            labels: ['2023-01', '2023-02'],
+            datasets: [{
+              label: 'Price (GBP)',
+              data: [140, 110],
+              borderColor: 'rgb(75, 192, 192)'
+            }]
+          },
+          annotations: [{
+            value: 110,
+            label: 'All-Time Low',
+            color: 'green',
+            style: 'dashed'
+          }]
+        }
+      }
+    });
+
+    const sseData = await chartReceived;
+
+    try {
+      const match = sseData.match(/data-chart="([^"]+)"/);
+      assert.ok(match, 'chart config not found');
+      const decoded = decodeURIComponent(match[1]);
+      const config = JSON.parse(decoded);
+      assert.strictEqual(config.type, 'line');
+      assert.strictEqual(config.title, 'Price History');
+      assert.deepStrictEqual(config.data.labels, ['2023-01', '2023-02']);
+      assert.strictEqual(config.data.datasets[0].label, 'Price (GBP)');
+      assert.deepStrictEqual(config.data.datasets[0].data, [140, 110]);
+      assert.strictEqual(config.annotations[0].label, 'All-Time Low');
+    } finally {
+      serverProcess.kill();
+    }
+  });
+
+  test('displays chart without annotations', async () => {
+    const { process: serverProcess, port: testPort } = await startServer();
+
+    const chartReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          if (data.includes('data-chart=') && data.includes('<canvas>')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for chart'));
+      }, 5000);
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+    await initMcp(serverProcess);
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_chart',
+        arguments: {
+          type: 'bar',
+          data: {
+            labels: ['A', 'B'],
+            datasets: [{
+              label: 'Counts',
+              data: [3, 7],
+              backgroundColor: '#4caf50'
+            }]
+          }
+        }
+      }
+    });
+
+    const sseData = await chartReceived;
+
+    try {
+      const match = sseData.match(/data-chart="([^"]+)"/);
+      assert.ok(match, 'chart config not found');
+      const decoded = decodeURIComponent(match[1]);
+      const config = JSON.parse(decoded);
+      assert.strictEqual(config.type, 'bar');
+      assert.deepStrictEqual(config.data.labels, ['A', 'B']);
+      assert.strictEqual(config.annotations, undefined);
+    } finally {
+      serverProcess.kill();
+    }
+  });
+});
+
 describe('md-server-post', () => {
   let serverProcess;
   let testPort;

@@ -34,6 +34,33 @@ const ProductSchema = z.object({
 
 type Product = z.infer<typeof ProductSchema>;
 
+const ChartDatasetSchema = z.object({
+  label: z.string().describe("Dataset label"),
+  data: z.array(z.number()).describe("Series data points"),
+  borderColor: z.string().optional().describe("Line/border color"),
+  backgroundColor: z.string().optional().describe("Fill/bar color"),
+});
+
+const ChartAnnotationSchema = z.object({
+  value: z.number().describe("Y-axis value for annotation line"),
+  label: z.string().describe("Annotation label"),
+  color: z.string().describe("Annotation line color"),
+  style: z.enum(["dashed", "solid"]).optional().describe("Line style"),
+});
+
+const DisplayChartSchema = z.object({
+  type: z.enum(["line", "bar", "scatter"]).describe("Chart type to render"),
+  title: z.string().optional().describe("Chart title"),
+  data: z.object({
+    labels: z.array(z.string()).describe("X-axis labels"),
+    datasets: z.array(ChartDatasetSchema).describe("Chart datasets"),
+  }),
+  annotations: z
+    .array(ChartAnnotationSchema)
+    .optional()
+    .describe("Optional reference lines"),
+});
+
 // Parse command line arguments
 const { values } = parseArgs({
   options: {
@@ -104,6 +131,18 @@ const HTML_PAGE = `<!DOCTYPE html>
     }
     th { background: #f4f4f4; }
     #content { min-height: 100px; }
+    .chart-block {
+      width: 100%;
+      height: 360px;
+      margin: 20px 0;
+    }
+    .chart-block canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+    @media (max-width: 600px) {
+      .chart-block { height: 280px; }
+    }
     .status {
       position: fixed;
       top: 10px;
@@ -122,12 +161,96 @@ const HTML_PAGE = `<!DOCTYPE html>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
   <script>
     marked.use({ breaks: true });
     mermaid.initialize({ startOnLoad: false, theme: 'default' });
 
     const contentEl = document.getElementById('content');
     const statusEl = document.getElementById('status');
+    const chartInstances = [];
+
+    function destroyCharts() {
+      while (chartInstances.length > 0) {
+        const chart = chartInstances.pop();
+        chart.destroy();
+      }
+    }
+
+    function normalizeChartConfig(raw) {
+      const config = JSON.parse(JSON.stringify(raw));
+
+      if (config.type === 'scatter' && Array.isArray(config.data?.labels)) {
+        config.data.datasets = (config.data.datasets || []).map((dataset) => {
+          if (!Array.isArray(dataset.data)) {
+            return dataset;
+          }
+          const points = dataset.data.map((value, index) => ({
+            x: config.data.labels[index],
+            y: value,
+          }));
+          return { ...dataset, data: points };
+        });
+        config.options = config.options || {};
+        config.options.scales = config.options.scales || {};
+        config.options.scales.x = { type: 'category' };
+      }
+
+      config.options = config.options || {};
+      config.options.responsive = true;
+      config.options.maintainAspectRatio = false;
+      config.options.interaction = { mode: 'index', intersect: false };
+      config.options.plugins = config.options.plugins || {};
+      config.options.plugins.legend = { position: 'bottom' };
+
+      if (config.title) {
+        config.options.plugins.title = {
+          display: true,
+          text: config.title,
+        };
+      }
+
+      if (config.annotations && config.annotations.length > 0) {
+        const annotationItems = {};
+        config.annotations.forEach((annotation, index) => {
+          annotationItems['line' + index] = {
+            type: 'line',
+            yMin: annotation.value,
+            yMax: annotation.value,
+            borderColor: annotation.color,
+            borderDash: annotation.style === 'dashed' ? [6, 6] : undefined,
+            borderWidth: 2,
+            label: {
+              display: true,
+              content: annotation.label,
+              position: 'end',
+              backgroundColor: 'rgba(255, 255, 255, 0.8)',
+              color: annotation.color,
+            },
+            scaleID: 'y',
+          };
+        });
+        config.options.plugins.annotation = { annotations: annotationItems };
+      }
+
+      if (config.options.plugins.zoom === undefined) {
+        config.options.plugins.zoom = {
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: 'x',
+          },
+          pan: {
+            enabled: true,
+            mode: 'x',
+          },
+        };
+      }
+
+      return config;
+    }
 
     async function renderContent(markdown) {
       contentEl.innerHTML = marked.parse(markdown);
@@ -136,6 +259,33 @@ const HTML_PAGE = `<!DOCTYPE html>
       if (mermaidEls.length > 0) {
         await mermaid.run({ nodes: mermaidEls });
       }
+      renderCharts();
+    }
+
+    function renderCharts() {
+      destroyCharts();
+      if (typeof Chart === 'undefined') {
+        console.error('Chart.js is not available');
+        return;
+      }
+      const chartBlocks = contentEl.querySelectorAll('[data-chart]');
+      chartBlocks.forEach((block) => {
+        const encoded = block.getAttribute('data-chart');
+        if (!encoded) return;
+        let config;
+        try {
+          config = JSON.parse(decodeURIComponent(encoded));
+        } catch (err) {
+          console.error('Failed to parse chart config', err);
+          return;
+        }
+        const canvas = block.querySelector('canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const chart = new Chart(ctx, normalizeChartConfig(config));
+        chartInstances.push(chart);
+      });
     }
 
     function connect() {
@@ -488,6 +638,32 @@ mcpServer.tool(
       content: [
         { type: "text", text: "Mermaid diagram displayed successfully" },
       ],
+    };
+  },
+);
+
+// Register the display_chart tool
+mcpServer.tool(
+  "display_chart",
+  "Render an interactive chart in the browser with tooltips and optional annotations.",
+  DisplayChartSchema.shape,
+  async ({ type, title, data, annotations }) => {
+    const payload = { type, title, data, annotations };
+    const encoded = encodeURIComponent(JSON.stringify(payload));
+    const parts: string[] = [
+      `<div class="chart-block" data-chart="${encoded}">`,
+      `<canvas></canvas>`,
+      `</div>`,
+    ];
+
+    currentContent = parts.join("\n");
+
+    for (const client of clients) {
+      sendSSE(client, "update", currentContent);
+    }
+
+    return {
+      content: [{ type: "text", text: "Chart displayed successfully" }],
     };
   },
 );

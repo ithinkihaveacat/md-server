@@ -67,6 +67,7 @@ any of the available tools:
 | `display_markdown` | Render markdown or HTML content                       |
 | `display_image`    | Display an image from URL or base64 data              |
 | `display_mermaid`  | Render a Mermaid diagram (flowchart, sequence, etc.)  |
+| `display_chart`    | Render an interactive chart with tooltips             |
 | `display_product`  | Display a product card with image, price, and details |
 
 ## How It Works
