@@ -59,8 +59,15 @@ echo "# Hello" | md-server-post --url http://localhost:3000
 ### MCP Integration
 
 The server also supports the Model Context Protocol (MCP) via stdio, allowing AI
-agents to display markdown content. Configure your MCP client to run `md-server`
-and use the `display_markdown` tool.
+agents to display content. Configure your MCP client to run `md-server` and use
+any of the available tools:
+
+| Tool               | Description                                           |
+| ------------------ | ----------------------------------------------------- |
+| `display_markdown` | Render markdown or HTML content                       |
+| `display_image`    | Display an image from URL or base64 data              |
+| `display_mermaid`  | Render a Mermaid diagram (flowchart, sequence, etc.)  |
+| `display_product`  | Display a product card with image, price, and details |
 
 ## How It Works
 
@@ -87,7 +94,7 @@ and use the `display_markdown` tool.
      clients
    - `GET /events` - SSE endpoint for live updates
 
-2. **md-server** also runs an MCP server on stdio with a `display_markdown` tool
+2. **md-server** also runs an MCP server on stdio with display tools
 
 3. **md-server-post** reads markdown from stdin and POSTs it to the server
 
