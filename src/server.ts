@@ -670,9 +670,11 @@ mcpServer.tool(
 
 // Sort options for product display
 const SortOption = z
-  .enum(["price_asc", "price_desc", "discount"])
+  .enum(["price_asc", "price_desc", "discount_asc", "discount_desc"])
   .optional()
-  .describe("Sort order: price_asc, price_desc, or discount (highest first)");
+  .describe(
+    "Sort order: price_asc, price_desc, discount_asc, or discount_desc",
+  );
 
 // Register the display_product tool
 mcpServer.tool(
@@ -703,9 +705,13 @@ mcpServer.tool(
       sorted.sort((a, b) => a.price - b.price);
     } else if (sort === "price_desc") {
       sorted.sort((a, b) => b.price - a.price);
-    } else if (sort === "discount") {
+    } else if (sort === "discount_desc") {
       sorted.sort(
         (a, b) => (b.discount_percent ?? 0) - (a.discount_percent ?? 0),
+      );
+    } else if (sort === "discount_asc") {
+      sorted.sort(
+        (a, b) => (a.discount_percent ?? 0) - (b.discount_percent ?? 0),
       );
     }
 

@@ -70,6 +70,21 @@ any of the available tools:
 | `display_chart`    | Render an interactive chart with tooltips             |
 | `display_product`  | Display a product card with image, price, and details |
 
+### `display_product` Tool
+
+The `display_product` tool displays product cards with optional sorting and
+pagination.
+
+**Sort Options:**
+
+- `price_asc` - Sort by price, lowest first
+- `price_desc` - Sort by price, highest first
+- `discount_asc` - Sort by discount percentage, lowest first
+- `discount_desc` - Sort by discount percentage, highest first
+
+**Note:** Prior versions used `discount` as an alias for `discount_desc`. This
+has been removed for consistency. Use `discount_desc` instead.
+
 ## How It Works
 
 ```

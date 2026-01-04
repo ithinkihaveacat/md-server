@@ -469,6 +469,179 @@ describe('display_product MCP tool', () => {
       serverProcess.kill();
     }
   });
+
+  test('sorts products by discount_desc (highest discount first)', async () => {
+    const { process: serverProcess, port: testPort } = await startServer();
+
+    const productReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          // Wait for all products to be received
+          if (data.includes('High Discount') && data.includes('Low Discount') && data.includes('No Discount')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for sorted products'));
+      }, 5000);
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'test', version: '1.0.0' }
+      }
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized'
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_product',
+        arguments: {
+          products: [
+            { title: 'Low Discount', price: 50, currency: 'GBP', discount_percent: 10 },
+            { title: 'High Discount', price: 50, currency: 'GBP', discount_percent: 50 },
+            { title: 'No Discount', price: 50, currency: 'GBP' }
+          ],
+          sort: 'discount_desc'
+        }
+      }
+    });
+
+    const sseData = await productReceived;
+
+    try {
+      // Verify all products appear
+      assert.match(sseData, /High Discount/);
+      assert.match(sseData, /Low Discount/);
+      assert.match(sseData, /No Discount/);
+      // Verify order: High Discount should appear before Low Discount
+      const highDiscountIndex = sseData.indexOf('High Discount');
+      const lowDiscountIndex = sseData.indexOf('Low Discount');
+      const noDiscountIndex = sseData.indexOf('No Discount');
+      assert(highDiscountIndex < lowDiscountIndex, 'High discount should appear before low discount');
+      assert(lowDiscountIndex < noDiscountIndex, 'Low discount should appear before no discount');
+    } finally {
+      serverProcess.kill();
+    }
+  });
+
+  test('sorts products by discount_asc (lowest discount first)', async () => {
+    const { process: serverProcess, port: testPort } = await startServer();
+
+    const productReceived = new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: testPort,
+        path: '/events',
+        method: 'GET'
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => {
+          data += chunk;
+          if (data.includes('High Discount') && data.includes('Low Discount') && data.includes('No Discount')) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('error', () => {});
+      });
+      req.on('error', reject);
+      req.end();
+
+      setTimeout(() => {
+        req.destroy();
+        reject(new Error('Timeout waiting for sorted products'));
+      }, 5000);
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'test', version: '1.0.0' }
+      }
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized'
+    });
+
+    await new Promise(r => setTimeout(r, 100));
+
+    sendMcpMessage(serverProcess, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'display_product',
+        arguments: {
+          products: [
+            { title: 'High Discount', price: 50, currency: 'GBP', discount_percent: 50 },
+            { title: 'Low Discount', price: 50, currency: 'GBP', discount_percent: 10 },
+            { title: 'No Discount', price: 50, currency: 'GBP' }
+          ],
+          sort: 'discount_asc'
+        }
+      }
+    });
+
+    const sseData = await productReceived;
+
+    try {
+      // Verify all products appear
+      assert.match(sseData, /High Discount/);
+      assert.match(sseData, /Low Discount/);
+      assert.match(sseData, /No Discount/);
+      // Verify order: No Discount (0%) should appear before Low Discount before High Discount
+      const noDiscountIndex = sseData.indexOf('No Discount');
+      const lowDiscountIndex = sseData.indexOf('Low Discount');
+      const highDiscountIndex = sseData.indexOf('High Discount');
+      assert(noDiscountIndex < lowDiscountIndex, 'No discount should appear before low discount');
+      assert(lowDiscountIndex < highDiscountIndex, 'Low discount should appear before high discount');
+    } finally {
+      serverProcess.kill();
+    }
+  });
 });
 
 describe('display_image MCP tool', () => {
